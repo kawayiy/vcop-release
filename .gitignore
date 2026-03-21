@@ -1,0 +1,90 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Type checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE / editors
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# TensorBoard / experiment outputs (see training scripts --log)
+logs/
+runs/
+debug_runs/
+events.out.tfevents.*
+
+# PyTorch checkpoints
+*.pt
+*.pth
+*.ckpt
+
+# Datasets and large media (aligns with make_zip.py EXCLUDE_DIRS / EXCLUDE_EXT)
+data/
+*.mp4
+*.avi
+*.tar
+*.zip
+
+# Extracted features (retrieve_*.py writes *.npy)
+*.npy
+ARCHITECTURE.md
