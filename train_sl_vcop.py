@@ -4,6 +4,7 @@ import time
 import random
 import itertools
 import argparse
+import inspect
 
 import numpy as np
 
@@ -19,6 +20,7 @@ import torch.optim as optim
 from tensorboardX import SummaryWriter
 
 from datasets.csl_daily import CSLDailyVCOPDataset
+from datasets.csl_news import CSLNewsVCOPDataset
 from models.vcopn import VCOPN
 from models.uni_sl_r3d import UniSLR3D
 
@@ -135,6 +137,7 @@ def test(args, model, criterion, device, test_dataloader):
 def parse_args():
     parser = argparse.ArgumentParser(description='Video Clip Order Prediction')
     parser.add_argument('--mode', type=str, default='train', help='train/test')
+    parser.add_argument('--dataset', type=str, default='csl_daily', choices=['csl_daily', 'csl_news'])
     # parser.add_argument('--model', type=str, default='uni_sl_r3d', help='c3d/r3d/r21d')
     parser.add_argument('--model', type=str, default='uni_sl_r3d', help='experiment tag')
     parser.add_argument('--cl', type=int, default=16, help='clip length')
@@ -162,8 +165,10 @@ def parse_args():
     parser.add_argument('--no_val', action='store_true', help='disable validation')
     parser.add_argument('--save_freq', type=int, default=20, help='save every N epochs')
     parser.add_argument('--data_root', type=str, default='/projects/u5ia/pxl416/data/CSL-Daily')
+    parser.add_argument('--videos_dir', type=str, default='rgb', help='relative or absolute video directory for CSL-News')
 
     parser.add_argument('--disable_tb', action='store_true', help='disable tensorboard logging')
+    parser.add_argument('--cpu', action='store_true', help='force CPU even if CUDA is available')
 
     args = parser.parse_args()
     return args
@@ -176,28 +181,61 @@ def load_model_state(model, state_dict):
         model.load_state_dict(state_dict)
 
 
+def build_sl_vcop_dataset(args, train, transforms_, split_file=None, split_name=None):
+    if args.dataset == 'csl_daily':
+        return CSLDailyVCOPDataset(
+            args.data_root,
+            args.cl,
+            args.it,
+            args.tl,
+            train,
+            transforms_,
+            fixed_sampling=args.overfit_small,
+            split_file=split_file,
+        )
+
+    if args.dataset == 'csl_news':
+        return CSLNewsVCOPDataset(
+            args.data_root,
+            args.cl,
+            args.it,
+            args.tl,
+            train,
+            transforms_,
+            fixed_sampling=args.overfit_small,
+            split_file=split_file,
+            split_name=split_name,
+            videos_dir=args.videos_dir,
+        )
+
+    raise ValueError('Unsupported dataset: {}'.format(args.dataset))
+
+
 if __name__ == '__main__':
     args = parse_args()
     print(vars(args))
 
     torch.backends.cudnn.benchmark = True
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print("Visible GPU count:", torch.cuda.device_count())
+    use_cuda = (not args.cpu) and torch.cuda.is_available()
+    device = torch.device('cuda' if use_cuda else 'cpu')
+    visible_gpu_count = torch.cuda.device_count() if use_cuda else 0
+    print("Visible GPU count:", visible_gpu_count)
+    if args.cpu:
+        print("CPU mode forced by --cpu")
 
     if args.seed is not None:
         random.seed(args.seed)
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
-        if torch.cuda.is_available():
+        if use_cuda:
             torch.cuda.manual_seed_all(args.seed)
 
     ########### model ##############
     base = UniSLR3D(layer_sizes=(1, 1, 1, 1), with_classifier=False)
     vcopn = VCOPN(base_network=base, feature_size=base.output_dim, tuple_len=args.tl)
 
-    if torch.cuda.device_count() > 1:
-        print(f"Using {torch.cuda.device_count()} GPUs")
+    if visible_gpu_count > 1:
+        print(f"Using {visible_gpu_count} GPUs")
         vcopn = nn.DataParallel(vcopn)
 
     vcopn = vcopn.to(device)
@@ -212,12 +250,15 @@ if __name__ == '__main__':
 
         else:
             if args.desp:
-                exp_name = '{}_cl{}_it{}_tl{}_{}_{}'.format(args.model, args.cl, args.it, args.tl, args.desp,
+                exp_name = '{}_{}_cl{}_it{}_tl{}_{}'.format(args.dataset, args.model, args.cl, args.it, args.tl, args.desp,
                                                             time.strftime('%m%d%H%M'))
             else:
-                exp_name = '{}_cl{}_it{}_tl{}_{}'.format(args.model, args.cl, args.it, args.tl,
+                exp_name = '{}_{}_cl{}_it{}_tl{}_{}'.format(args.dataset, args.model, args.cl, args.it, args.tl,
                                                          time.strftime('%m%d%H%M'))
+            if args.log is None:
+                args.log = './debug_runs'
             log_dir = os.path.join(args.log, exp_name)
+        os.makedirs(log_dir, exist_ok=True)
         # writer = SummaryWriter(log_dir)
         writer = None if args.disable_tb else SummaryWriter(log_dir)
 
@@ -231,24 +272,22 @@ if __name__ == '__main__':
                 transforms.ToTensor()
             ])
 
-        train_dataset = CSLDailyVCOPDataset(
-            args.data_root,
-            args.cl, args.it, args.tl,
+        train_dataset = build_sl_vcop_dataset(
+            args,
             True,
             train_transforms,
-            fixed_sampling=args.overfit_small,
-            split_file=args.train_split
+            split_file=args.train_split,
+            split_name='train',
         )
 
         val_dataset = None
         if not args.no_val:
-            val_dataset = CSLDailyVCOPDataset(
-                args.data_root,
-                args.cl, args.it, args.tl,
+            val_dataset = build_sl_vcop_dataset(
+                args,
                 False,
                 train_transforms,
-                fixed_sampling=args.overfit_small,
-                split_file=args.val_split
+                split_file=args.val_split,
+                split_name='val',
             )
         # if val_dataset is not None:
         #     val_dataloader = DataLoader(
@@ -284,13 +323,20 @@ if __name__ == '__main__':
         #     pin_memory=True
         # )
 
-        train_dataloader = DataLoader(train_dataset,
+        train_dataloader_kwargs = dict(
             batch_size=args.bs,
             shuffle=True,
             num_workers=args.workers,
             pin_memory=True,
-            persistent_workers=(args.workers > 0),
-            prefetch_factor=2 if args.workers > 0 else None)
+        )
+        if args.workers > 0:
+            dataloader_init_params = inspect.signature(DataLoader.__init__).parameters
+            if 'persistent_workers' in dataloader_init_params:
+                train_dataloader_kwargs['persistent_workers'] = True
+            if 'prefetch_factor' in dataloader_init_params:
+                train_dataloader_kwargs['prefetch_factor'] = 2
+
+        train_dataloader = DataLoader(train_dataset, **train_dataloader_kwargs)
 
         val_dataloader = None
         if val_dataset is not None:
@@ -371,8 +417,12 @@ if __name__ == '__main__':
             transforms.ToTensor()
         ])
         # test_dataset = UCF101VCOPDataset('data/ucf101', args.cl, args.it, args.tl, False, test_transforms)
-        test_dataset = CSLDailyVCOPDataset('/projects/u5ia/pxl416/data/CSL-Daily', args.cl, args.it, args.tl, False,
-                                           test_transforms, fixed_sampling=False)
+        test_dataset = build_sl_vcop_dataset(
+            args,
+            False,
+            test_transforms,
+            split_name='test',
+        )
         test_dataloader = DataLoader(test_dataset, batch_size=args.bs, shuffle=False,
                                      num_workers=args.workers, pin_memory=True)
         print('TEST video number: {}.'.format(len(test_dataset)))
