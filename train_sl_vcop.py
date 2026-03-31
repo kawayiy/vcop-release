@@ -19,6 +19,7 @@ from torchvision import transforms
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 
+from datasets.bobsl import BOBSLVCOPDataset
 from datasets.csl_daily import CSLDailyVCOPDataset
 from datasets.csl_news import CSLNewsVCOPDataset
 from models.vcopn import VCOPN
@@ -137,7 +138,7 @@ def test(args, model, criterion, device, test_dataloader):
 def parse_args():
     parser = argparse.ArgumentParser(description='Video Clip Order Prediction')
     parser.add_argument('--mode', type=str, default='train', help='train/test')
-    parser.add_argument('--dataset', type=str, default='csl_daily', choices=['csl_daily', 'csl_news'])
+    parser.add_argument('--dataset', type=str, default='csl_daily', choices=['csl_daily', 'csl_news', 'bobsl'])
     # parser.add_argument('--model', type=str, default='uni_sl_r3d', help='c3d/r3d/r21d')
     parser.add_argument('--model', type=str, default='uni_sl_r3d', help='experiment tag')
     parser.add_argument('--cl', type=int, default=16, help='clip length')
@@ -165,7 +166,9 @@ def parse_args():
     parser.add_argument('--no_val', action='store_true', help='disable validation')
     parser.add_argument('--save_freq', type=int, default=20, help='save every N epochs')
     parser.add_argument('--data_root', type=str, default='/projects/u5ia/pxl416/data/CSL-Daily')
-    parser.add_argument('--videos_dir', type=str, default='rgb', help='relative or absolute video directory for CSL-News')
+    parser.add_argument('--videos_dir', type=str, default='rgb', help='relative or absolute video directory for CSL-News/BOBSL')
+    parser.add_argument('--annotations_dir', type=str, default='manual_annotations/continuous_sign_sequences/cslr-json-v2',
+                        help='relative or absolute annotation directory for BOBSL')
 
     parser.add_argument('--disable_tb', action='store_true', help='disable tensorboard logging')
     parser.add_argument('--cpu', action='store_true', help='force CPU even if CUDA is available')
@@ -196,6 +199,21 @@ def build_sl_vcop_dataset(args, train, transforms_, split_file=None, split_name=
 
     if args.dataset == 'csl_news':
         return CSLNewsVCOPDataset(
+            args.data_root,
+            args.cl,
+            args.it,
+            args.tl,
+            train,
+            transforms_,
+            fixed_sampling=args.overfit_small,
+            split_file=split_file,
+            split_name=split_name,
+            videos_dir=args.videos_dir,
+            annotations_dir=args.annotations_dir,
+        )
+
+    if args.dataset == 'bobsl':
+        return BOBSLVCOPDataset(
             args.data_root,
             args.cl,
             args.it,
@@ -250,7 +268,7 @@ if __name__ == '__main__':
 
         else:
             if args.desp:
-                exp_name = '{}_{}_cl{}_it{}_tl{}_{}'.format(args.dataset, args.model, args.cl, args.it, args.tl, args.desp,
+                exp_name = '{}_{}_cl{}_it{}_tl{}_{}_{}'.format(args.dataset, args.model, args.cl, args.it, args.tl, args.desp,
                                                             time.strftime('%m%d%H%M'))
             else:
                 exp_name = '{}_{}_cl{}_it{}_tl{}_{}'.format(args.dataset, args.model, args.cl, args.it, args.tl,
