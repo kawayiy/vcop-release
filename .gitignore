@@ -87,4 +87,3 @@ data/
 
 # Extracted features (retrieve_*.py writes *.npy)
 *.npy
-ARCHITECTURE.md
