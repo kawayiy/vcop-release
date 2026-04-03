@@ -35,6 +35,7 @@ from datasets.csl_news import CSLNewsVCOPDataset
 from datasets.phoenix import PhoenixVCOPDataset
 from models.vcopn import VCOPN
 from models.uni_sl_r3d import UniSLR3D
+from models.video_vit import VideoViTBackbone
 
 
 def order_class_index(order):
@@ -341,6 +342,14 @@ def parse_args():
     parser.add_argument('--videos_dir', type=str, default='rgb', help='relative or absolute video/frame directory for CSL-News/BOBSL/PHOENIX')
     parser.add_argument('--annotations_dir', type=str, default='manual_annotations/continuous_sign_sequences/cslr-json-v2',
                         help='relative or absolute annotation directory for BOBSL/PHOENIX')
+    parser.add_argument('--vit_embed_dim', type=int, default=512, help='embedding dim for ViT backbone')
+    parser.add_argument('--vit_depth', type=int, default=4, help='transformer depth for ViT backbone')
+    parser.add_argument('--vit_heads', type=int, default=8, help='attention heads for ViT backbone')
+    parser.add_argument('--vit_mlp_ratio', type=float, default=4.0, help='MLP ratio for ViT backbone')
+    parser.add_argument('--vit_dropout', type=float, default=0.1, help='dropout for ViT backbone')
+    parser.add_argument('--vit_tubelet_t', type=int, default=2, help='temporal tubelet size for ViT backbone')
+    parser.add_argument('--vit_tubelet_h', type=int, default=16, help='height tubelet size for ViT backbone')
+    parser.add_argument('--vit_tubelet_w', type=int, default=16, help='width tubelet size for ViT backbone')
 
     parser.add_argument('--disable_tb', action='store_true', help='disable tensorboard logging')
     parser.add_argument('--cpu', action='store_true', help='force CPU even if CUDA is available')
@@ -355,6 +364,25 @@ def parse_args():
 
 def load_model_state(model, state_dict):
     unwrap_model(model).load_state_dict(state_dict)
+
+
+def build_backbone(args):
+    if args.model == 'uni_sl_r3d':
+        return UniSLR3D(layer_sizes=(1, 1, 1, 1), with_classifier=False)
+
+    if args.model == 'vit':
+        return VideoViTBackbone(
+            input_size=(args.cl, 112, 112),
+            tubelet_size=(args.vit_tubelet_t, args.vit_tubelet_h, args.vit_tubelet_w),
+            embed_dim=args.vit_embed_dim,
+            depth=args.vit_depth,
+            num_heads=args.vit_heads,
+            mlp_ratio=args.vit_mlp_ratio,
+            dropout=args.vit_dropout,
+            with_classifier=False,
+        )
+
+    raise ValueError('Unsupported model: {}'.format(args.model))
 
 
 def build_sl_vcop_dataset(args, train, transforms_, split_file=None, split_name=None):
@@ -382,7 +410,6 @@ def build_sl_vcop_dataset(args, train, transforms_, split_file=None, split_name=
             split_file=split_file,
             split_name=split_name,
             videos_dir=args.videos_dir,
-            annotations_dir=args.annotations_dir,
         )
 
     if args.dataset == 'bobsl':
@@ -397,6 +424,7 @@ def build_sl_vcop_dataset(args, train, transforms_, split_file=None, split_name=
             split_file=split_file,
             split_name=split_name,
             videos_dir=args.videos_dir,
+            annotations_dir=args.annotations_dir,
         )
 
     if args.dataset == 'phoenix':
@@ -451,7 +479,7 @@ if __name__ == '__main__':
             torch.cuda.manual_seed_all(process_seed)
 
     ########### model ##############
-    base = UniSLR3D(layer_sizes=(1, 1, 1, 1), with_classifier=False)
+    base = build_backbone(args)
     vcopn = VCOPN(base_network=base, feature_size=base.output_dim, tuple_len=args.tl)
     vcopn = vcopn.to(device)
     if args.distributed:
