@@ -25,11 +25,18 @@ class TubeletEmbedding(nn.Module):
         return x
 
 
+class GELU(nn.Module):
+    def forward(self, x):
+        return 0.5 * x * (
+            1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * x * x * x))
+        )
+
+
 class MLP(nn.Module):
     def __init__(self, embed_dim, mlp_dim, dropout):
         super().__init__()
         self.fc1 = nn.Linear(embed_dim, mlp_dim)
-        self.act = nn.ReLU(inplace=True)
+        self.act = GELU()
         self.drop1 = nn.Dropout(dropout)
         self.fc2 = nn.Linear(mlp_dim, embed_dim)
         self.drop2 = nn.Dropout(dropout)
